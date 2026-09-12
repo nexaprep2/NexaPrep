@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — NexaPrep</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="top-bar glass">
+    <div class="logo">NEXA<span>PREP</span></div>
+    <button id="logoutBtn">Log Out</button>
+  </div>
+
+  <div class="container wide">
+    <div class="brand" style="text-align:left; margin-top:20px;">
+      <h1 id="welcomeText">Welcome</h1>
+      <p>Select a course below to continue.</p>
+    </div>
+
+    <div id="alertBox" class="alert alert-error hidden"></div>
+    <div id="coursesList"></div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireStudentAuth();
+    const info = getStudentInfo();
+    if (info) document.getElementById('welcomeText').textContent = `Welcome, ${info.fullName}`;
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      clearSession();
+      window.location.href = 'login.html';
+    });
+
+    async function loadCourses() {
+      try {
+        const { courses } = await apiRequest('/courses');
+        const container = document.getElementById('coursesList');
+
+        if (!courses.length) {
+          container.innerHTML = '<div class="empty-state">No courses are available yet. Please check back later.</div>';
+          return;
+        }
+
+        container.innerHTML = courses.map(c => {
+          const isActive = c.activationStatus === 'active';
+          const pillClass = isActive ? 'pill-active' : 'pill-inactive';
+          const pillText = isActive ? 'Active' : 'Not Activated';
+          const target = isActive ? `course.html?courseId=${c.id}` : `activate.html?courseId=${c.id}`;
+          return `
+            <a href="${target}" class="course-card" style="text-decoration:none;">
+              <div>
+                <div class="name">${c.name}</div>
+                <div class="code">${c.code}${c.description ? ' · ' + c.description : ''}</div>
+              </div>
+              <span class="pill ${pillClass}">${pillText}</span>
+            </a>
+          `;
+        }).join('');
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    loadCourses();
+  </script>
+</body>
+</html>

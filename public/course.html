@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Course — NexaPrep</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="top-bar glass">
+    <div class="logo">NEXA<span>PREP</span></div>
+    <button id="logoutBtn">Log Out</button>
+  </div>
+
+  <div class="container">
+    <div class="brand" style="text-align:left; margin-top:20px;">
+      <div class="badge">NEXAPREP</div>
+      <h1 id="welcomeText">Welcome</h1>
+    </div>
+
+    <div id="alertBox" class="alert alert-error hidden"></div>
+
+    <div class="dashboard-menu">
+      <div class="menu-item" id="cbtItem">
+        <div>
+          <div class="title">📘 Physics 108 CBT</div>
+          <div class="desc">Take a timed practice examination</div>
+        </div>
+        <span>→</span>
+      </div>
+      <div class="menu-item">
+        <div>
+          <div class="title">📝 Physics 108 Notes</div>
+          <div class="desc">Coming soon</div>
+        </div>
+        <span>→</span>
+      </div>
+      <div class="menu-item">
+        <div>
+          <div class="title">📐 Formula Sheet</div>
+          <div class="desc">Coming soon</div>
+        </div>
+        <span>→</span>
+      </div>
+      <div class="menu-item" id="progressItem">
+        <div>
+          <div class="title">📊 My Progress</div>
+          <div class="desc">View your past attempt history</div>
+        </div>
+        <span>→</span>
+      </div>
+    </div>
+
+    <div id="progressSection" class="hidden">
+      <div class="section-title">My Progress</div>
+      <div id="progressList"></div>
+    </div>
+
+    <p class="helper-text"><a href="dashboard.html">← Back to all courses</a></p>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireStudentAuth();
+    const params = new URLSearchParams(window.location.search);
+    const courseId = params.get('courseId');
+    if (!courseId) window.location.href = 'dashboard.html';
+
+    const info = getStudentInfo();
+    if (info) document.getElementById('welcomeText').textContent = `Welcome, ${info.fullName}`;
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      clearSession();
+      window.location.href = 'login.html';
+    });
+
+    document.getElementById('cbtItem').addEventListener('click', () => {
+      window.location.href = `cbt.html?courseId=${courseId}`;
+    });
+
+    document.getElementById('progressItem').addEventListener('click', async () => {
+      const section = document.getElementById('progressSection');
+      const list = document.getElementById('progressList');
+      section.classList.toggle('hidden');
+      if (section.classList.contains('hidden')) return;
+
+      try {
+        const { results } = await apiRequest(`/cbt/${courseId}/history`);
+        if (!results.length) {
+          list.innerHTML = '<div class="empty-state">No attempts yet. Take the CBT to see your progress here.</div>';
+          return;
+        }
+        list.innerHTML = `
+          <table>
+            <thead><tr><th>Date</th><th>Score</th><th>Correct</th><th>Wrong</th><th>Attempted</th></tr></thead>
+            <tbody>
+              ${results.map(r => `
+                <tr>
+                  <td>${new Date(r.submittedAt).toLocaleString()}</td>
+                  <td>${r.scorePercent}%</td>
+                  <td>${r.correct}</td>
+                  <td>${r.wrong}</td>
+                  <td>${r.attempted}/${r.totalQuestions}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    });
+  </script>
+</body>
+</html>

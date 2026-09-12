@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register — NexaPrep</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="brand">
+      <div class="badge">NEXAPREP</div>
+      <h1>Create your student account</h1>
+      <p>Register to access the NexaPrep CBT platform.</p>
+    </div>
+
+    <div class="card">
+      <div id="alertBox" class="alert alert-error hidden"></div>
+
+      <form id="registerForm">
+        <div class="field">
+          <label for="fullName">Full Name</label>
+          <input type="text" id="fullName" required autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required minlength="6" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="department">Department</label>
+          <input type="text" id="department" required placeholder="e.g. Physics">
+        </div>
+        <div class="field">
+          <label for="school">School / Institution</label>
+          <input type="text" id="school" required placeholder="e.g. University of Abuja">
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">Create Account</button>
+      </form>
+
+      <p class="helper-text">Already have an account? <a href="login.html">Log in</a></p>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    const form = document.getElementById('registerForm');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert('alertBox');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account...';
+
+      try {
+        const data = await apiRequest('/auth/register', {
+          method: 'POST',
+          auth: false,
+          body: {
+            fullName: document.getElementById('fullName').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+            department: document.getElementById('department').value.trim(),
+            school: document.getElementById('school').value.trim()
+          }
+        });
+
+        setToken(data.token);
+        setStudentInfo(data.student);
+        window.location.href = 'dashboard.html';
+      } catch (err) {
+        showAlert('alertBox', err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Account';
+      }
+    });
+  </script>
+</body>
+</html>

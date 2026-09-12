@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CBT Exam — NexaPrep</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="top-bar glass">
+    <div class="logo">NEXA<span>PREP</span> CBT</div>
+    <button id="exitBtn">Exit</button>
+  </div>
+
+  <div class="container">
+    <div id="alertBox" class="alert alert-error hidden"></div>
+
+    <!-- Loading -->
+    <div id="loadingState" class="empty-state">Loading examination...</div>
+
+    <!-- Exam UI -->
+    <div id="examState" class="hidden">
+      <div class="exam-header">
+        <div class="small-muted" id="questionCounter">Question 1 of 10</div>
+        <div class="timer" id="timerDisplay">30:00</div>
+      </div>
+
+      <div class="card">
+        <div id="questionText" style="font-weight:700; font-size:16px; margin-bottom:16px;"></div>
+        <div id="optionsList"></div>
+      </div>
+
+      <div class="q-nav" id="qNav"></div>
+
+      <div class="exam-footer">
+        <button class="btn btn-secondary" id="prevBtn">Previous</button>
+        <button class="btn btn-secondary" id="nextBtn">Next</button>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" id="submitBtn">Submit Examination</button>
+      </div>
+    </div>
+
+    <!-- Result UI -->
+    <div id="resultState" class="hidden">
+      <div class="card">
+        <div class="result-summary">
+          <div class="score" id="scoreValue">0%</div>
+          <div class="out-of" id="scoreDetail"></div>
+        </div>
+        <div class="grid cols-4">
+          <div class="stat-card"><div class="value" id="statTotal">0</div><div class="label">Total Questions</div></div>
+          <div class="stat-card"><div class="value" id="statAttempted">0</div><div class="label">Attempted</div></div>
+          <div class="stat-card"><div class="value" id="statCorrect">0</div><div class="label">Correct</div></div>
+          <div class="stat-card"><div class="value" id="statWrong">0</div><div class="label">Wrong</div></div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:20px;" id="backToCourseBtn">Back to Course</button>
+      </div>
+    </div>
+
+    <!-- Empty state (no questions yet) -->
+    <div id="noQuestionsState" class="hidden empty-state">
+      No questions are available for this course yet. Please check back later.
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireStudentAuth();
+    const params = new URLSearchParams(window.location.search);
+    const courseId = params.get('courseId');
+    if (!courseId) window.location.href = 'dashboard.html';
+
+    document.getElementById('exitBtn').addEventListener('click', () => {
+      if (confirm('Exit the exam? Your progress will not be saved.')) {
+        window.location.href = `course.html?courseId=${courseId}`;
+      }
+    });
+    document.getElementById('backToCourseBtn').addEventListener('click', () => {
+      window.location.href = `course.html?courseId=${courseId}`;
+    });
+
+    let questions = [];
+    let currentIndex = 0;
+    const answers = {}; // { questionId: selectedOptionId } — optionId is the option's ORIGINAL index, not its shuffled position
+    let remainingSeconds = 30 * 60; // overwritten by the course's configured duration once loaded
+    let timerInterval = null;
+
+    async function init() {
+      try {
+        const { questions: qs, durationMinutes } = await apiRequest(`/cbt/${courseId}/questions`);
+        questions = qs;
+        remainingSeconds = (durationMinutes || 30) * 60;
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (!questions.length) {
+          document.getElementById('noQuestionsState').classList.remove('hidden');
+          return;
+        }
+
+        document.getElementById('examState').classList.remove('hidden');
+        renderQuestionNav();
+        renderQuestion();
+        startTimer();
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    function startTimer() {
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        remainingSeconds--;
+        updateTimerDisplay();
+        if (remainingSeconds <= 0) {
+          clearInterval(timerInterval);
+          submitExam();
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const m = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
+      const s = (remainingSeconds % 60).toString().padStart(2, '0');
+      document.getElementById('timerDisplay').textContent = `${m}:${s}`;
+    }
+
+    function renderQuestionNav() {
+      const nav = document.getElementById('qNav');
+      nav.innerHTML = questions.map((q, i) => {
+        const answered = answers[q.id] !== undefined;
+        const isCurrent = i === currentIndex;
+        return `<button data-index="${i}" class="${isCurrent ? 'current' : ''} ${answered ? 'answered' : ''}">${i + 1}</button>`;
+      }).join('');
+      nav.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentIndex = parseInt(btn.dataset.index, 10);
+          renderQuestion();
+          renderQuestionNav();
+        });
+      });
+    }
+
+    function renderQuestion() {
+      const q = questions[currentIndex];
+      document.getElementById('questionCounter').textContent = `Question ${currentIndex + 1} of ${questions.length}`;
+      document.getElementById('questionText').textContent = q.text;
+
+      const optionsList = document.getElementById('optionsList');
+      optionsList.innerHTML = q.options.map(opt => {
+        const selected = answers[q.id] === opt.optionId;
+        return `
+          <div class="option-row ${selected ? 'selected' : ''}" data-option-id="${opt.optionId}">
+            <input type="radio" name="option" ${selected ? 'checked' : ''}>
+            <span>${opt.text}</span>
+          </div>
+        `;
+      }).join('');
+
+      optionsList.querySelectorAll('.option-row').forEach(row => {
+        row.addEventListener('click', () => {
+          answers[q.id] = parseInt(row.dataset.optionId, 10);
+          renderQuestion();
+          renderQuestionNav();
+        });
+      });
+
+      document.getElementById('prevBtn').disabled = currentIndex === 0;
+      document.getElementById('nextBtn').disabled = currentIndex === questions.length - 1;
+    }
+
+    document.getElementById('prevBtn').addEventListener('click', () => {
+      if (currentIndex > 0) { currentIndex--; renderQuestion(); renderQuestionNav(); }
+    });
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      if (currentIndex < questions.length - 1) { currentIndex++; renderQuestion(); renderQuestionNav(); }
+    });
+    document.getElementById('submitBtn').addEventListener('click', () => {
+      if (confirm('Submit your examination now?')) submitExam();
+    });
+
+    async function submitExam() {
+      clearInterval(timerInterval);
+      try {
+        const { result } = await apiRequest(`/cbt/${courseId}/submit`, {
+          method: 'POST',
+          body: { answers }
+        });
+
+        document.getElementById('examState').classList.add('hidden');
+        document.getElementById('resultState').classList.remove('hidden');
+        document.getElementById('scoreValue').textContent = `${result.scorePercent}%`;
+        document.getElementById('scoreDetail').textContent = `${result.correct} out of ${result.totalQuestions} correct`;
+        document.getElementById('statTotal').textContent = result.totalQuestions;
+        document.getElementById('statAttempted').textContent = result.attempted;
+        document.getElementById('statCorrect').textContent = result.correct;
+        document.getElementById('statWrong').textContent = result.wrong;
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NexaPrep</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="brand" style="margin-top:80px;">
+      <div class="badge">NEXAPREP</div>
+      <h1>CBT Practice Platform</h1>
+      <p>Prepare for your exams with timed practice CBTs built for your syllabus.</p>
+    </div>
+
+    <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+      <a href="login.html" class="btn btn-primary" style="text-decoration:none;">Log In</a>
+      <a href="register.html" class="btn btn-secondary" style="text-decoration:none;">Create an Account</a>
+    </div>
+  </div>
+
+  <script>
+    // If already logged in, skip straight to the dashboard.
+    if (localStorage.getItem('studentToken')) {
+      window.location.href = 'dashboard.html';
+    }
+  </script>
+</body>
+</html>

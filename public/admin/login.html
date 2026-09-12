@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Login — NexaPrep</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="brand">
+      <div class="badge">ADMIN PANEL</div>
+      <h1>Admin Login</h1>
+      <p>Restricted access. Authorized personnel only.</p>
+    </div>
+
+    <div class="card">
+      <div id="alertBox" class="alert alert-error hidden"></div>
+      <form id="loginForm">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" id="submitBtn">Log In</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="admin-api.js"></script>
+  <script>
+    const form = document.getElementById('loginForm');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert('alertBox');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Logging in...';
+      try {
+        const data = await adminApiRequest('/admin-auth/login', {
+          method: 'POST',
+          auth: false,
+          body: {
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value
+          }
+        });
+        setAdminToken(data.token);
+        setAdminInfo(data.admin);
+        window.location.href = 'dashboard.html';
+      } catch (err) {
+        showAlert('alertBox', err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Log In';
+      }
+    });
+  </script>
+</body>
+</html>

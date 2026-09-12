@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activate Course — NexaPrep</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="brand">
+      <div class="badge">ACTIVATION REQUIRED</div>
+      <h1 id="pageTitle">Enter your Activation Code</h1>
+      <p id="pageSubtitle">Enter your premium activation code to unlock this course.</p>
+    </div>
+
+    <div class="card">
+      <div id="alertBox" class="alert alert-error hidden"></div>
+      <div id="successBox" class="alert alert-success hidden"></div>
+
+      <form id="activateForm">
+        <div class="field">
+          <label for="code">Activation Code</label>
+          <input type="text" id="code" required placeholder="e.g. PHY108-7KX29P" style="text-transform:uppercase;">
+        </div>
+        <button type="submit" class="btn btn-primary" id="submitBtn">Activate Account</button>
+      </form>
+
+      <p class="helper-text"><a href="dashboard.html">← Back to Dashboard</a></p>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireStudentAuth();
+
+    const params = new URLSearchParams(window.location.search);
+    const courseId = params.get('courseId');
+    if (!courseId) window.location.href = 'dashboard.html';
+
+    const form = document.getElementById('activateForm');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert('alertBox');
+      document.getElementById('successBox').classList.add('hidden');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Activating...';
+
+      try {
+        const code = document.getElementById('code').value.trim();
+        const data = await apiRequest(`/courses/${courseId}/activate`, {
+          method: 'POST',
+          body: { code }
+        });
+
+        showAlert('successBox', data.message, 'success');
+        setTimeout(() => {
+          window.location.href = `course.html?courseId=${courseId}`;
+        }, 1200);
+      } catch (err) {
+        showAlert('alertBox', err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Activate Account';
+      }
+    });
+  </script>
+</body>
+</html>
