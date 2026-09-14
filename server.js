@@ -47,7 +47,7 @@ connectDB().then(async () => {
 
 // ---- Self-ping keep-alive ----
 // Free-tier Render (and similar) spin down after a period of inactivity.
-// This pings the app's own public URL at a randomized interval (5–11 min)
+// This pings the app's own public URL at a randomized interval (0–7 min)
 // so it never sits idle long enough to cool down. Set SELF_URL (or Render's
 // auto-provided RENDER_EXTERNAL_URL) in your environment for this to work;
 // it's a no-op locally if neither is set.
@@ -58,8 +58,8 @@ function startSelfPing() {
     return;
   }
 
-  const MIN_MS = 5 * 60 * 1000;
-  const MAX_MS = 11 * 60 * 1000;
+  const MIN_MS = 0;
+  const MAX_MS = 7 * 60 * 1000;
 
   function scheduleNextPing() {
     const delay = Math.floor(Math.random() * (MAX_MS - MIN_MS + 1)) + MIN_MS;

@@ -71,64 +71,137 @@ router.post('/', async (req, res) => {
   }
 });
 
-// POST /api/admin/questions/bulk  { courseId, csvText }
-// Expected CSV columns (header row optional, case-insensitive):
+// Parses one JSON question object into a normalized { text, options, correctIndex }
+// shape, or returns a string error describing what's wrong with it.
+// Accepted shapes for a single question:
+//   { question|text, optionA, optionB, optionC, optionD, correctAnswer }
+//   { question|text, options: [4 strings], correctAnswer|correctIndex }
+function normalizeJsonQuestion(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return 'Each question must be a JSON object.';
+  }
+
+  const text = String(raw.question ?? raw.text ?? '').trim();
+  if (!text) return 'Missing "question" (or "text") field.';
+
+  let options;
+  if (Array.isArray(raw.options)) {
+    options = raw.options.map(o => String(o ?? '').trim());
+  } else {
+    options = [raw.optionA, raw.optionB, raw.optionC, raw.optionD].map(o => String(o ?? '').trim());
+  }
+
+  if (options.length !== 4 || options.some(o => !o)) {
+    return 'Exactly 4 non-empty options are required (via "options" array or optionA-optionD).';
+  }
+
+  const correctRaw = raw.correctAnswer ?? raw.correctIndex;
+  if (correctRaw === undefined || correctRaw === null || correctRaw === '') {
+    return 'Missing "correctAnswer" (or "correctIndex") field.';
+  }
+  const correctIndex = normalizeCorrectAnswer(correctRaw);
+  if (correctIndex === null) {
+    return `correct answer "${correctRaw}" is not a valid A-D letter or 0-4 number.`;
+  }
+
+  return { text, options, correctIndex };
+}
+
+// POST /api/admin/questions/bulk  { courseId, csvText }  OR  { courseId, jsonText }  OR  { courseId, questions: [...] }
+// CSV columns (header row optional, case-insensitive):
 //   question, optionA, optionB, optionC, optionD, correctAnswer
+// JSON: either a raw string (jsonText) or an already-parsed array (questions) of objects shaped like:
+//   { "question": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "correctAnswer": "B" }
+//   or { "question": "...", "options": ["...", "...", "...", "..."], "correctAnswer": "B" }
 // correctAnswer accepts a letter (A/B/C/D) or a number (0-3 or 1-4).
 router.post('/bulk', async (req, res) => {
   try {
-    const { courseId, csvText } = req.body;
-    if (!courseId || !csvText || !csvText.trim()) {
-      return res.status(400).json({ error: 'courseId and csvText are required.' });
+    const { courseId, csvText, jsonText, questions: questionsBody } = req.body;
+    if (!courseId) {
+      return res.status(400).json({ error: 'courseId is required.' });
+    }
+
+    const hasCsv = csvText && csvText.trim();
+    const hasJsonText = jsonText && jsonText.trim();
+    const hasQuestionsArray = Array.isArray(questionsBody);
+
+    if (!hasCsv && !hasJsonText && !hasQuestionsArray) {
+      return res.status(400).json({ error: 'Provide csvText, jsonText, or a questions array.' });
     }
 
     const course = await Course.findById(courseId);
     if (!course) return res.status(404).json({ error: 'Course not found.' });
 
-    let rows;
-    try {
-      rows = parseCsv(csvText);
-    } catch (parseErr) {
-      return res.status(400).json({ error: 'Could not parse the CSV file.' });
-    }
-    if (!rows.length) {
-      return res.status(400).json({ error: 'The CSV file appears to be empty.' });
-    }
-
-    // If the first row looks like a header (first cell isn't a real question,
-    // and none of its cells parse as a valid answer letter/number on their own),
-    // skip it. Simple heuristic: if the first cell case-insensitively matches
-    // "question", treat row 1 as a header.
-    let dataRows = rows;
-    if (rows[0][0] && rows[0][0].trim().toLowerCase() === 'question') {
-      dataRows = rows.slice(1);
-    }
-
     const errors = [];
     const toInsert = [];
 
-    dataRows.forEach((row, i) => {
-      const rowNum = i + 1;
-      const [text, optA, optB, optC, optD, correctRaw] = row.map(c => (c || '').trim());
-
-      if (!text || !optA || !optB || !optC || !optD || correctRaw === undefined || correctRaw === '') {
-        errors.push(`Row ${rowNum}: missing one or more required columns (question, 4 options, correct answer).`);
-        return;
+    if (hasCsv) {
+      let rows;
+      try {
+        rows = parseCsv(csvText);
+      } catch (parseErr) {
+        return res.status(400).json({ error: 'Could not parse the CSV file.' });
+      }
+      if (!rows.length) {
+        return res.status(400).json({ error: 'The CSV file appears to be empty.' });
       }
 
-      const correctIndex = normalizeCorrectAnswer(correctRaw);
-      if (correctIndex === null) {
-        errors.push(`Row ${rowNum}: correct answer "${correctRaw}" is not a valid A-D letter or 0-4 number.`);
-        return;
+      // If the first row looks like a header (first cell isn't a real question,
+      // and none of its cells parse as a valid answer letter/number on their own),
+      // skip it. Simple heuristic: if the first cell case-insensitively matches
+      // "question", treat row 1 as a header.
+      let dataRows = rows;
+      if (rows[0][0] && rows[0][0].trim().toLowerCase() === 'question') {
+        dataRows = rows.slice(1);
       }
 
-      toInsert.push({
-        course: courseId,
-        text,
-        options: [optA, optB, optC, optD],
-        correctIndex
+      dataRows.forEach((row, i) => {
+        const rowNum = i + 1;
+        const [text, optA, optB, optC, optD, correctRaw] = row.map(c => (c || '').trim());
+
+        if (!text || !optA || !optB || !optC || !optD || correctRaw === undefined || correctRaw === '') {
+          errors.push(`Row ${rowNum}: missing one or more required columns (question, 4 options, correct answer).`);
+          return;
+        }
+
+        const correctIndex = normalizeCorrectAnswer(correctRaw);
+        if (correctIndex === null) {
+          errors.push(`Row ${rowNum}: correct answer "${correctRaw}" is not a valid A-D letter or 0-4 number.`);
+          return;
+        }
+
+        toInsert.push({ course: courseId, text, options: [optA, optB, optC, optD], correctIndex });
       });
-    });
+    } else {
+      // JSON path: either an already-parsed array, or a raw string to parse.
+      let items = questionsBody;
+      if (!hasQuestionsArray) {
+        try {
+          const parsed = JSON.parse(jsonText);
+          // Allow either a bare array, or an object with a "questions" array inside it.
+          items = Array.isArray(parsed) ? parsed : parsed.questions;
+        } catch (parseErr) {
+          return res.status(400).json({ error: 'Could not parse the JSON. Make sure it is a valid JSON array of questions.' });
+        }
+      }
+
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: 'JSON must be an array of question objects (or an object with a "questions" array).' });
+      }
+      if (!items.length) {
+        return res.status(400).json({ error: 'The JSON file appears to be empty.' });
+      }
+
+      items.forEach((item, i) => {
+        const rowNum = i + 1;
+        const result = normalizeJsonQuestion(item);
+        if (typeof result === 'string') {
+          errors.push(`Item ${rowNum}: ${result}`);
+          return;
+        }
+        toInsert.push({ course: courseId, ...result });
+      });
+    }
 
     let inserted = [];
     if (toInsert.length) {
@@ -136,14 +209,14 @@ router.post('/bulk', async (req, res) => {
     }
 
     res.status(201).json({
-      message: `${inserted.length} question(s) imported${errors.length ? `, ${errors.length} row(s) skipped` : ''}.`,
+      message: `${inserted.length} question(s) imported${errors.length ? `, ${errors.length} item(s) skipped` : ''}.`,
       insertedCount: inserted.length,
       skippedCount: errors.length,
       errors
     });
   } catch (err) {
     console.error('Bulk question upload error:', err);
-    res.status(500).json({ error: 'Could not process the CSV upload.' });
+    res.status(500).json({ error: 'Could not process the bulk upload.' });
   }
 });
 
@@ -174,6 +247,27 @@ router.patch('/:id', async (req, res) => {
   } catch (err) {
     console.error('Update question error:', err);
     res.status(500).json({ error: 'Could not update question.' });
+  }
+});
+
+// DELETE /api/admin/questions/bulk-delete  { ids: [id1, id2, ...] }
+// Must be declared before the /:id route below so "bulk-delete" isn't
+// swallowed as an :id param.
+router.delete('/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) {
+      return res.status(400).json({ error: 'ids must be a non-empty array of question IDs.' });
+    }
+
+    const result = await Question.deleteMany({ _id: { $in: ids } });
+    res.json({
+      message: `${result.deletedCount} question(s) deleted.`,
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    console.error('Bulk delete questions error:', err);
+    res.status(500).json({ error: 'Could not delete the selected questions.' });
   }
 });
 
