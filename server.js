@@ -13,6 +13,7 @@ const adminDashboardRoutes = require('./src/routes/adminDashboard');
 const adminCourseRoutes = require('./src/routes/adminCourses');
 const adminActivationCodeRoutes = require('./src/routes/adminActivationCodes');
 const adminQuestionRoutes = require('./src/routes/adminQuestions');
+const adminRevenueRoutes = require('./src/routes/adminRevenue');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/api/admin', adminDashboardRoutes); // exposes /api/admin/dashboard and
 app.use('/api/admin/courses', adminCourseRoutes);
 app.use('/api/admin/activation-codes', adminActivationCodeRoutes);
 app.use('/api/admin/questions', adminQuestionRoutes);
+app.use('/api/admin/revenue', adminRevenueRoutes);
 
 // ---- Static frontend ----
 app.use(express.static(path.join(__dirname, 'public')));

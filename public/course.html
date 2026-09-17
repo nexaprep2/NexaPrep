@@ -23,14 +23,14 @@
     <div class="dashboard-menu">
       <div class="menu-item" id="cbtItem">
         <div>
-          <div class="title">📘 Physics 108 CBT</div>
+          <div class="title" id="cbtTitle">📘 CBT</div>
           <div class="desc">Take a timed practice examination</div>
         </div>
         <span>→</span>
       </div>
       <div class="menu-item">
         <div>
-          <div class="title">📝 Physics 108 Notes</div>
+          <div class="title" id="notesTitle">📝 Notes</div>
           <div class="desc">Coming soon</div>
         </div>
         <span>→</span>
@@ -69,6 +69,20 @@
     const info = getStudentInfo();
     if (info) document.getElementById('welcomeText').textContent = `Welcome, ${info.fullName}`;
 
+    // Load this course's real name/code so the menu doesn't show stale
+    // placeholder text from a different course.
+    (async () => {
+      try {
+        const { courses } = await apiRequest('/courses');
+        const course = courses.find(c => c.id === courseId);
+        const label = course ? `${course.name}` : 'Course';
+        document.getElementById('cbtTitle').textContent = `📘 ${label} CBT`;
+        document.getElementById('notesTitle').textContent = `📝 ${label} Notes`;
+      } catch (err) {
+        // Non-critical — leave the generic titles in place if this fails.
+      }
+    })();
+
     document.getElementById('logoutBtn').addEventListener('click', () => {
       clearSession();
       window.location.href = 'login.html';
@@ -92,7 +106,7 @@
         }
         list.innerHTML = `
           <table>
-            <thead><tr><th>Date</th><th>Score</th><th>Correct</th><th>Wrong</th><th>Attempted</th></tr></thead>
+            <thead><tr><th>Date</th><th>Score</th><th>Correct</th><th>Wrong</th><th>Attempted</th><th></th></tr></thead>
             <tbody>
               ${results.map(r => `
                 <tr>
@@ -101,6 +115,7 @@
                   <td>${r.correct}</td>
                   <td>${r.wrong}</td>
                   <td>${r.attempted}/${r.totalQuestions}</td>
+                  <td><a href="cbt.html?courseId=${courseId}&resultId=${r._id}" class="btn btn-outline btn-sm">Review</a></td>
                 </tr>
               `).join('')}
             </tbody>

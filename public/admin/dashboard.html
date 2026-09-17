@@ -22,6 +22,7 @@
       <button class="tab-btn" data-tab="students">Students</button>
       <button class="tab-btn" data-tab="codes">Activation Codes</button>
       <button class="tab-btn" data-tab="questions">Questions</button>
+      <button class="tab-btn" data-tab="revenue">Revenue</button>
     </div>
 
     <!-- OVERVIEW -->
@@ -59,6 +60,12 @@
             <div class="field">
               <label for="courseDuration">CBT Time Limit (minutes)</label>
               <input type="number" id="courseDuration" min="1" max="300" value="30" required>
+            </div>
+          </div>
+          <div class="grid cols-2">
+            <div class="field">
+              <label for="coursePrice">Activation Code Price (₦, optional — used for revenue tracking)</label>
+              <input type="number" id="coursePrice" min="0" step="0.01" value="0">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">Create Course</button>
@@ -124,6 +131,10 @@
             <label>Options (select the correct one)</label>
             <div id="qOptionsWrap"></div>
           </div>
+          <div class="field">
+            <label for="qExplanation">Explanation (optional — shown to students if they get this wrong)</label>
+            <textarea id="qExplanation" rows="2" placeholder="Why the correct answer is correct..."></textarea>
+          </div>
           <button type="submit" class="btn btn-primary">Add Question</button>
         </form>
       </div>
@@ -150,8 +161,9 @@
         <!-- CSV mode -->
         <div id="bulkCsvPanel">
           <p class="small-muted" style="margin-top:0;">
-            Columns: <code>question, optionA, optionB, optionC, optionD, correctAnswer</code>.
-            <code>correctAnswer</code> accepts a letter (A–D) or a number (0–3 or 1–4). A header row is optional.
+            Columns: <code>question, optionA, optionB, optionC, optionD, correctAnswer, explanation</code>.
+            <code>correctAnswer</code> accepts a letter (A–D) or a number (0–3 or 1–4). <code>explanation</code> is optional
+            (shown to students who get the question wrong). A header row is optional.
             <a href="#" id="downloadCsvTemplateLink">Download a sample CSV</a>.
           </p>
           <div class="field">
@@ -164,7 +176,8 @@
         <div id="bulkJsonPanel" class="hidden">
           <p class="small-muted" style="margin-top:0;">
             An array of objects, each with <code>question</code>, either <code>options</code> (array of 4) or
-            <code>optionA</code>-<code>optionD</code>, and <code>correctAnswer</code> (A–D or 0–3 / 1–4).
+            <code>optionA</code>-<code>optionD</code>, <code>correctAnswer</code> (A–D or 0–3 / 1–4), and an optional
+            <code>explanation</code> shown to students who get it wrong.
             <a href="#" id="downloadJsonTemplateLink">Download a sample JSON file</a>.
           </p>
           <div class="field">
@@ -177,7 +190,8 @@
   {
     "question": "What is the SI unit of energy?",
     "optionA": "Newton", "optionB": "Joule", "optionC": "Watt", "optionD": "Pascal",
-    "correctAnswer": "B"
+    "correctAnswer": "B",
+    "explanation": "Joule is defined as one Newton applied over one metre."
   }
 ]'></textarea>
           </div>
@@ -198,6 +212,43 @@
         <button type="button" class="btn btn-danger btn-sm" id="deleteSelectedBtn" disabled>Delete Selected (<span id="selectedCount">0</span>)</button>
       </div>
       <div id="questionsTableWrap"></div>
+    </div>
+
+    <!-- REVENUE -->
+    <div id="tab-revenue" class="tab-panel hidden">
+      <div class="section-title">Revenue Share Settings</div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="field" style="max-width:280px;">
+          <label for="yourSharePercent">Your Share (%)</label>
+          <input type="number" id="yourSharePercent" min="0" max="100" step="0.1">
+        </div>
+        <button type="button" class="btn btn-secondary" id="saveShareBtn">Save</button>
+        <p class="small-muted" style="margin-top:10px; margin-bottom:0;">
+          The remaining percentage is the client's share. This applies to all revenue calculations below.
+        </p>
+      </div>
+
+      <div class="section-title">This Week's Revenue (Friday – Friday, live)</div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="flex-between">
+          <div id="currentWeekRange" class="small-muted"></div>
+          <button type="button" class="btn btn-outline btn-sm" id="refreshRevenueBtn">Refresh</button>
+        </div>
+        <div class="grid cols-4" style="margin-top:14px;">
+          <div class="stat-card"><div class="value" id="revGross">₦0</div><div class="label">Gross Revenue</div></div>
+          <div class="stat-card"><div class="value" id="revYourShare">₦0</div><div class="label">Your Share</div></div>
+          <div class="stat-card"><div class="value" id="revClientShare">₦0</div><div class="label">Client's Share</div></div>
+          <div class="stat-card"><div class="value" id="revSaleCount">0</div><div class="label">Activations Sold</div></div>
+        </div>
+        <div style="margin-top:16px; display:flex; align-items:center; gap:12px;">
+          <button type="button" class="btn btn-primary" id="markPaidBtn">Mark This Week as Paid</button>
+          <span id="paidBadge" class="small-muted hidden">✓ Already marked as paid</span>
+        </div>
+        <div id="currentWeekSalesWrap" style="margin-top:18px;"></div>
+      </div>
+
+      <div class="section-title">Weekly History</div>
+      <div id="revenueHistoryWrap"></div>
     </div>
   </div>
 
@@ -281,7 +332,8 @@
             name: document.getElementById('courseName').value.trim(),
             code: document.getElementById('courseCode').value.trim(),
             description: document.getElementById('courseDescription').value.trim(),
-            durationMinutes: document.getElementById('courseDuration').value
+            durationMinutes: document.getElementById('courseDuration').value,
+            price: document.getElementById('coursePrice').value
           }
         });
         showAlert('successBox', 'Course created successfully.', 'success');
@@ -303,13 +355,14 @@
         }
         wrap.innerHTML = `
           <table>
-            <thead><tr><th>Name</th><th>Code</th><th>Time Limit</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Code</th><th>Time Limit</th><th>Price</th><th>Status</th><th>Created</th><th></th></tr></thead>
             <tbody>
               ${coursesCache.map(c => `
                 <tr>
                   <td>${c.name}</td>
                   <td><span class="code-chip">${c.code}</span></td>
                   <td>${c.durationMinutes} min <button class="btn btn-outline btn-sm" data-edit-duration="${c._id}" data-current-duration="${c.durationMinutes}">Edit</button></td>
+                  <td>₦${(c.price || 0).toLocaleString()} <button class="btn btn-outline btn-sm" data-edit-price="${c._id}" data-current-price="${c.price || 0}">Edit</button></td>
                   <td>
                     <label class="ios-switch">
                       <input type="checkbox" data-toggle-course="${c._id}" data-active="${c.isActive}" ${c.isActive ? 'checked' : ''}>
@@ -353,6 +406,27 @@
               await adminApiRequest(`/admin/courses/${id}`, {
                 method: 'PATCH',
                 body: { durationMinutes: parsed }
+              });
+              loadCoursesTable();
+            } catch (err) {
+              showAlert('alertBox', err.message);
+            }
+          });
+        });
+        wrap.querySelectorAll('[data-edit-price]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.editPrice;
+            const current = btn.dataset.currentPrice;
+            const next = prompt('New activation code price (₦):', current);
+            if (next === null) return;
+            const parsed = parseFloat(next);
+            if (Number.isNaN(parsed) || parsed < 0) {
+              return showAlert('alertBox', 'Please enter a valid non-negative amount.');
+            }
+            try {
+              await adminApiRequest(`/admin/courses/${id}`, {
+                method: 'PATCH',
+                body: { price: parsed }
               });
               loadCoursesTable();
             } catch (err) {
@@ -545,7 +619,8 @@
             courseId: document.getElementById('qCourse').value,
             text: document.getElementById('qText').value.trim(),
             options,
-            correctIndex
+            correctIndex,
+            explanation: document.getElementById('qExplanation').value.trim()
           }
         });
         showAlert('successBox', 'Question added.', 'success');
@@ -594,6 +669,7 @@
             <ul style="margin:10px 0 0; padding-left:18px;">
               ${q.options.map((o, i) => `<li style="${i === q.correctIndex ? 'font-weight:700; color:#1e9e5a;' : ''}">${o}${i === q.correctIndex ? ' ✓ correct' : ''}</li>`).join('')}
             </ul>
+            ${q.explanation ? `<div class="small-muted" style="margin-top:10px;"><strong>Explanation:</strong> ${q.explanation}</div>` : ''}
           </div>
         `).join('');
 
@@ -663,9 +739,9 @@
 
     document.getElementById('downloadCsvTemplateLink').addEventListener('click', (e) => {
       e.preventDefault();
-      const sample = 'question,optionA,optionB,optionC,optionD,correctAnswer\n' +
-        'What is the SI unit of energy?,Newton,Joule,Watt,Pascal,B\n' +
-        'Which is a vector quantity?,Speed,Mass,Displacement,Time,C\n';
+      const sample = 'question,optionA,optionB,optionC,optionD,correctAnswer,explanation\n' +
+        'What is the SI unit of energy?,Newton,Joule,Watt,Pascal,B,"Joule is defined as one Newton applied over one metre."\n' +
+        'Which is a vector quantity?,Speed,Mass,Displacement,Time,C,"Vectors have both magnitude and direction; displacement does."\n';
       const blob = new Blob([sample], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -681,12 +757,14 @@
         {
           question: 'What is the SI unit of energy?',
           optionA: 'Newton', optionB: 'Joule', optionC: 'Watt', optionD: 'Pascal',
-          correctAnswer: 'B'
+          correctAnswer: 'B',
+          explanation: 'Joule is defined as one Newton applied over one metre.'
         },
         {
           question: 'Which is a vector quantity?',
           options: ['Speed', 'Mass', 'Displacement', 'Time'],
-          correctAnswer: 'C'
+          correctAnswer: 'C',
+          explanation: 'Vectors have both magnitude and direction; displacement does.'
         }
       ];
       const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
@@ -778,6 +856,142 @@
         document.getElementById('bulkCourse').innerHTML = courseOptionsHtml();
         document.getElementById('questionFilterCourse').innerHTML = courseOptionsHtml(true);
         return loadQuestionsTable();
+      }
+      if (tab === 'revenue') {
+        return loadRevenueTab();
+      }
+    }
+
+    // ---- Revenue ----
+    let currentWeekCache = null;
+
+    function formatNaira(n) {
+      return '₦' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+    function formatWeekRange(startIso, endIso) {
+      const start = new Date(startIso);
+      const end = new Date(endIso);
+      const endDisplay = new Date(end.getTime() - 1); // show as inclusive end day
+      return `${start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} → ${endDisplay.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`;
+    }
+
+    async function loadRevenueTab() {
+      try {
+        const { yourSharePercent } = await adminApiRequest('/admin/revenue/settings');
+        document.getElementById('yourSharePercent').value = yourSharePercent;
+        await loadCurrentWeekRevenue();
+        await loadRevenueHistory();
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    document.getElementById('saveShareBtn').addEventListener('click', async () => {
+      hideAlert('alertBox');
+      const pct = parseFloat(document.getElementById('yourSharePercent').value);
+      if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+        return showAlert('alertBox', 'Enter a percentage between 0 and 100.');
+      }
+      try {
+        await adminApiRequest('/admin/revenue/settings', {
+          method: 'PATCH',
+          body: { yourSharePercent: pct }
+        });
+        showAlert('successBox', 'Revenue share updated.', 'success');
+        await loadCurrentWeekRevenue();
+        await loadRevenueHistory();
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    });
+
+    document.getElementById('refreshRevenueBtn').addEventListener('click', () => {
+      loadCurrentWeekRevenue();
+      loadRevenueHistory();
+    });
+
+    async function loadCurrentWeekRevenue() {
+      try {
+        const data = await adminApiRequest('/admin/revenue/current');
+        currentWeekCache = data;
+
+        document.getElementById('currentWeekRange').textContent = `Week of ${formatWeekRange(data.weekStart, data.weekEnd)}`;
+        document.getElementById('revGross').textContent = formatNaira(data.grossRevenue);
+        document.getElementById('revYourShare').textContent = formatNaira(data.yourShare);
+        document.getElementById('revClientShare').textContent = formatNaira(data.clientShare);
+        document.getElementById('revSaleCount').textContent = data.saleCount;
+
+        document.getElementById('markPaidBtn').classList.toggle('hidden', data.paid);
+        document.getElementById('paidBadge').classList.toggle('hidden', !data.paid);
+
+        const salesWrap = document.getElementById('currentWeekSalesWrap');
+        if (!data.sales.length) {
+          salesWrap.innerHTML = '<div class="empty-state">No activations sold yet this week.</div>';
+        } else {
+          salesWrap.innerHTML = `
+            <table>
+              <thead><tr><th>Timestamp</th><th>Course</th><th>Code</th><th>Amount</th></tr></thead>
+              <tbody>
+                ${data.sales.map(s => `
+                  <tr>
+                    <td>${new Date(s.usedAt).toLocaleString()}</td>
+                    <td>${s.courseName}</td>
+                    <td><span class="code-chip">${s.code}</span></td>
+                    <td>${formatNaira(s.amount)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    document.getElementById('markPaidBtn').addEventListener('click', async () => {
+      if (!currentWeekCache) return;
+      if (!confirm(`Mark ${formatNaira(currentWeekCache.yourShare)} as paid for this week?`)) return;
+      const note = prompt('Optional note for this payout record:', '') || '';
+      try {
+        await adminApiRequest('/admin/revenue/mark-paid', {
+          method: 'POST',
+          body: {
+            weekStart: currentWeekCache.weekStart,
+            weekEnd: currentWeekCache.weekEnd,
+            note
+          }
+        });
+        showAlert('successBox', 'Week marked as paid.', 'success');
+        await loadCurrentWeekRevenue();
+        await loadRevenueHistory();
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    });
+
+    async function loadRevenueHistory() {
+      try {
+        const { weeks } = await adminApiRequest('/admin/revenue/history?weeks=8');
+        const wrap = document.getElementById('revenueHistoryWrap');
+        wrap.innerHTML = `
+          <table>
+            <thead><tr><th>Week</th><th>Gross</th><th>Your Share</th><th>Client Share</th><th>Status</th></tr></thead>
+            <tbody>
+              ${weeks.map(w => `
+                <tr>
+                  <td>${formatWeekRange(w.weekStart, w.weekEnd)}</td>
+                  <td>${formatNaira(w.grossRevenue)}</td>
+                  <td>${formatNaira(w.yourShare)}</td>
+                  <td>${formatNaira(w.clientShare)}</td>
+                  <td>${w.paid ? `<span style="color:#1e9e5a; font-weight:700;">Paid</span>` : `<span class="small-muted">Unpaid</span>`}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        showAlert('alertBox', err.message);
       }
     }
 
