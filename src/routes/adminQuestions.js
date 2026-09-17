@@ -50,18 +50,19 @@ function validateQuestionBody(body) {
   return null;
 }
 
-// POST /api/admin/questions  { courseId, text, options[4], correctIndex }
+// POST /api/admin/questions  { courseId, text, options[4], correctIndex, explanation? }
 router.post('/', async (req, res) => {
   try {
     const error = validateQuestionBody(req.body);
     if (error) return res.status(400).json({ error });
 
-    const { courseId, text, options, correctIndex } = req.body;
+    const { courseId, text, options, correctIndex, explanation } = req.body;
     const question = await Question.create({
       course: courseId,
       text: text.trim(),
       options: options.map(o => String(o).trim()),
-      correctIndex: parseInt(correctIndex, 10)
+      correctIndex: parseInt(correctIndex, 10),
+      explanation: (explanation || '').trim()
     });
 
     res.status(201).json({ message: 'Question added.', question });
@@ -104,16 +105,18 @@ function normalizeJsonQuestion(raw) {
     return `correct answer "${correctRaw}" is not a valid A-D letter or 0-4 number.`;
   }
 
-  return { text, options, correctIndex };
+  const explanation = String(raw.explanation ?? '').trim();
+
+  return { text, options, correctIndex, explanation };
 }
 
 // POST /api/admin/questions/bulk  { courseId, csvText }  OR  { courseId, jsonText }  OR  { courseId, questions: [...] }
 // CSV columns (header row optional, case-insensitive):
-//   question, optionA, optionB, optionC, optionD, correctAnswer
+//   question, optionA, optionB, optionC, optionD, correctAnswer, explanation (explanation column is optional)
 // JSON: either a raw string (jsonText) or an already-parsed array (questions) of objects shaped like:
-//   { "question": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "correctAnswer": "B" }
-//   or { "question": "...", "options": ["...", "...", "...", "..."], "correctAnswer": "B" }
-// correctAnswer accepts a letter (A/B/C/D) or a number (0-3 or 1-4).
+//   { "question": "...", "optionA": "...", "optionB": "...", "optionC": "...", "optionD": "...", "correctAnswer": "B", "explanation": "..." }
+//   or { "question": "...", "options": ["...", "...", "...", "..."], "correctAnswer": "B", "explanation": "..." }
+// correctAnswer accepts a letter (A/B/C/D) or a number (0-3 or 1-4). explanation is optional in both formats.
 router.post('/bulk', async (req, res) => {
   try {
     const { courseId, csvText, jsonText, questions: questionsBody } = req.body;
@@ -157,7 +160,7 @@ router.post('/bulk', async (req, res) => {
 
       dataRows.forEach((row, i) => {
         const rowNum = i + 1;
-        const [text, optA, optB, optC, optD, correctRaw] = row.map(c => (c || '').trim());
+        const [text, optA, optB, optC, optD, correctRaw, explanationRaw] = row.map(c => (c || '').trim());
 
         if (!text || !optA || !optB || !optC || !optD || correctRaw === undefined || correctRaw === '') {
           errors.push(`Row ${rowNum}: missing one or more required columns (question, 4 options, correct answer).`);
@@ -170,7 +173,13 @@ router.post('/bulk', async (req, res) => {
           return;
         }
 
-        toInsert.push({ course: courseId, text, options: [optA, optB, optC, optD], correctIndex });
+        toInsert.push({
+          course: courseId,
+          text,
+          options: [optA, optB, optC, optD],
+          correctIndex,
+          explanation: explanationRaw || ''
+        });
       });
     } else {
       // JSON path: either an already-parsed array, or a raw string to parse.
@@ -220,19 +229,22 @@ router.post('/bulk', async (req, res) => {
   }
 });
 
-// PATCH /api/admin/questions/:id  { text?, options?, correctIndex? }
+// PATCH /api/admin/questions/:id  { text?, options?, correctIndex?, explanation? }
 router.patch('/:id', async (req, res) => {
   try {
     const question = await Question.findById(req.params.id);
     if (!question) return res.status(404).json({ error: 'Question not found.' });
 
-    const { text, options, correctIndex } = req.body;
+    const { text, options, correctIndex, explanation } = req.body;
     if (text !== undefined) question.text = text.trim();
     if (options !== undefined) {
       if (!Array.isArray(options) || options.length !== 4) {
         return res.status(400).json({ error: 'options must be an array of exactly 4 items.' });
       }
       question.options = options.map(o => String(o).trim());
+    }
+    if (explanation !== undefined) {
+      question.explanation = String(explanation).trim();
     }
     if (correctIndex !== undefined) {
       const idx = parseInt(correctIndex, 10);

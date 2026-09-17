@@ -8,6 +8,13 @@ const resultSchema = new mongoose.Schema({
   correct: { type: Number, required: true },
   wrong: { type: Number, required: true },
   scorePercent: { type: Number, required: true },
+  // Per-question record of what the student picked, so the exact attempt
+  // can be reviewed later (with corrections/explanations) even after the
+  // session ends. `selected` is -1/undefined-equivalent when unattempted.
+  answers: [{
+    question: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },
+    selected: { type: Number, default: null }
+  }],
   submittedAt: { type: Date, default: Date.now }
 });
 

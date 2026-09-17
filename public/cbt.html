@@ -18,6 +18,20 @@
     <!-- Loading -->
     <div id="loadingState" class="empty-state">Loading examination...</div>
 
+    <!-- Question-count picker (shown before the exam starts) -->
+    <div id="countPickerState" class="hidden">
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">How many questions?</div>
+        <p class="small-muted">Choose how many questions you want in this attempt.</p>
+        <div id="countOptionsWrap" class="grid cols-4" style="margin-bottom:16px;"></div>
+        <div class="field" style="max-width:280px;">
+          <label for="customCountInput">Or type an exact number (max <span id="customCountMax">0</span>)</label>
+          <input type="number" id="customCountInput" min="1">
+        </div>
+        <button class="btn btn-primary" id="startExamBtn" disabled style="margin-top:8px;">Start Exam</button>
+      </div>
+    </div>
+
     <!-- Exam UI -->
     <div id="examState" class="hidden">
       <div class="exam-header">
@@ -54,8 +68,25 @@
           <div class="stat-card"><div class="value" id="statCorrect">0</div><div class="label">Correct</div></div>
           <div class="stat-card"><div class="value" id="statWrong">0</div><div class="label">Wrong</div></div>
         </div>
-        <button class="btn btn-primary" style="margin-top:20px;" id="backToCourseBtn">Back to Course</button>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+          <button class="btn btn-secondary" id="viewCorrectionsBtn">Review My Answers</button>
+          <button class="btn btn-primary" id="backToCourseBtn">Back to Course</button>
+        </div>
       </div>
+
+      <div id="correctionsWrap" class="hidden" style="margin-top:20px;"></div>
+    </div>
+
+    <!-- Review-only state (revisiting a past attempt via ?resultId=) -->
+    <div id="reviewOnlyState" class="hidden">
+      <div class="card">
+        <div class="result-summary">
+          <div class="score" id="reviewScoreValue">0%</div>
+          <div class="out-of" id="reviewScoreDetail"></div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:20px;" id="reviewBackBtn">Back to Course</button>
+      </div>
+      <div id="reviewCorrectionsWrap" style="margin-top:20px;"></div>
     </div>
 
     <!-- Empty state (no questions yet) -->
@@ -69,6 +100,7 @@
     requireStudentAuth();
     const params = new URLSearchParams(window.location.search);
     const courseId = params.get('courseId');
+    const reviewResultId = params.get('resultId');
     if (!courseId) window.location.href = 'dashboard.html';
 
     document.getElementById('exitBtn').addEventListener('click', () => {
@@ -79,16 +111,119 @@
     document.getElementById('backToCourseBtn').addEventListener('click', () => {
       window.location.href = `course.html?courseId=${courseId}`;
     });
+    document.getElementById('reviewBackBtn').addEventListener('click', () => {
+      window.location.href = `course.html?courseId=${courseId}`;
+    });
+
+    function renderBreakdown(breakdown) {
+      return breakdown.map((b, i) => `
+        <div class="card" style="margin-bottom:12px; border-left:4px solid ${b.isCorrect ? '#1e9e5a' : '#d64545'};">
+          <div style="font-weight:700;">${i + 1}. ${b.text}</div>
+          <ul style="margin:10px 0 0; padding-left:18px;">
+            ${b.options.map((o, idx) => {
+              let style = '';
+              let tag = '';
+              if (idx === b.correctIndex) { style = 'font-weight:700; color:#1e9e5a;'; tag = ' ✓ correct answer'; }
+              if (idx === b.selected && idx !== b.correctIndex) { style = 'font-weight:700; color:#d64545;'; tag = ' ✗ your answer'; }
+              if (idx === b.selected && idx === b.correctIndex) { tag = ' ✓ correct answer (your answer)'; }
+              return `<li style="${style}">${o}${tag}</li>`;
+            }).join('')}
+          </ul>
+          ${b.selected === null ? '<div class="small-muted" style="margin-top:8px;">You did not attempt this question.</div>' : ''}
+          ${(!b.isCorrect && b.explanation) ? `<div class="alert alert-error" style="margin-top:10px;"><strong>Explanation:</strong> ${b.explanation}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    // ---- Review-only mode: revisiting a past, already-submitted attempt ----
+    async function loadReviewOnly() {
+      document.getElementById('loadingState').classList.add('hidden');
+      try {
+        const { result, breakdown } = await apiRequest(`/cbt/results/${reviewResultId}/review`);
+        document.getElementById('reviewOnlyState').classList.remove('hidden');
+        document.getElementById('reviewScoreValue').textContent = `${result.scorePercent}%`;
+        document.getElementById('reviewScoreDetail').textContent = `${result.correct} out of ${result.totalQuestions} correct — submitted ${new Date(result.submittedAt).toLocaleString()}`;
+        document.getElementById('reviewCorrectionsWrap').innerHTML = renderBreakdown(breakdown);
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    if (reviewResultId) {
+      loadReviewOnly();
+    } else {
+      loadCountPicker();
+    }
 
     let questions = [];
     let currentIndex = 0;
     const answers = {}; // { questionId: selectedOptionId } — optionId is the option's ORIGINAL index, not its shuffled position
     let remainingSeconds = 30 * 60; // overwritten by the course's configured duration once loaded
     let timerInterval = null;
+    let selectedCount = null; // null = all questions
+
+    // ---- Question-count picker: shown before the exam starts ----
+    async function loadCountPicker() {
+      try {
+        const { totalQuestions } = await apiRequest(`/cbt/${courseId}/meta`);
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (!totalQuestions) {
+          document.getElementById('noQuestionsState').classList.remove('hidden');
+          return;
+        }
+
+        const availableCounts = [];
+        for (let c = 10; c < totalQuestions; c += 10) availableCounts.push(c);
+
+        const wrap = document.getElementById('countOptionsWrap');
+        wrap.innerHTML = availableCounts.map(c => `
+          <button type="button" class="btn btn-outline count-option" data-count="${c}">${c} Questions</button>
+        `).join('') + `
+          <button type="button" class="btn btn-outline count-option" data-count="all">All (${totalQuestions})</button>
+        `;
+
+        wrap.querySelectorAll('.count-option').forEach(btn => {
+          btn.addEventListener('click', () => {
+            wrap.querySelectorAll('.count-option').forEach(b => b.classList.remove('btn-primary'));
+            document.getElementById('customCountInput').value = '';
+            btn.classList.add('btn-primary');
+            selectedCount = btn.dataset.count === 'all' ? null : parseInt(btn.dataset.count, 10);
+            document.getElementById('startExamBtn').disabled = false;
+          });
+        });
+
+        const customInput = document.getElementById('customCountInput');
+        customInput.max = totalQuestions;
+        document.getElementById('customCountMax').textContent = totalQuestions;
+        customInput.addEventListener('input', () => {
+          const val = parseInt(customInput.value, 10);
+          wrap.querySelectorAll('.count-option').forEach(b => b.classList.remove('btn-primary'));
+          if (!Number.isNaN(val) && val > 0) {
+            selectedCount = val >= totalQuestions ? null : val;
+            document.getElementById('startExamBtn').disabled = false;
+          } else {
+            document.getElementById('startExamBtn').disabled = true;
+          }
+        });
+
+        document.getElementById('countPickerState').classList.remove('hidden');
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        showAlert('alertBox', err.message);
+      }
+    }
+
+    document.getElementById('startExamBtn').addEventListener('click', () => {
+      document.getElementById('countPickerState').classList.add('hidden');
+      document.getElementById('loadingState').classList.remove('hidden');
+      init();
+    });
 
     async function init() {
       try {
-        const { questions: qs, durationMinutes } = await apiRequest(`/cbt/${courseId}/questions`);
+        const query = selectedCount ? `?count=${selectedCount}` : '';
+        const { questions: qs, durationMinutes } = await apiRequest(`/cbt/${courseId}/questions${query}`);
         questions = qs;
         remainingSeconds = (durationMinutes || 30) * 60;
         document.getElementById('loadingState').classList.add('hidden');
@@ -183,9 +318,9 @@
     async function submitExam() {
       clearInterval(timerInterval);
       try {
-        const { result } = await apiRequest(`/cbt/${courseId}/submit`, {
+        const { result, breakdown } = await apiRequest(`/cbt/${courseId}/submit`, {
           method: 'POST',
-          body: { answers }
+          body: { answers, questionIds: questions.map(q => q.id) }
         });
 
         document.getElementById('examState').classList.add('hidden');
@@ -196,12 +331,26 @@
         document.getElementById('statAttempted').textContent = result.attempted;
         document.getElementById('statCorrect').textContent = result.correct;
         document.getElementById('statWrong').textContent = result.wrong;
+
+        lastBreakdown = breakdown;
       } catch (err) {
         showAlert('alertBox', err.message);
       }
     }
 
-    init();
+    let lastBreakdown = [];
+    document.getElementById('viewCorrectionsBtn').addEventListener('click', () => {
+      const wrap = document.getElementById('correctionsWrap');
+      const isHidden = wrap.classList.contains('hidden');
+      if (isHidden) {
+        wrap.innerHTML = renderBreakdown(lastBreakdown);
+        wrap.classList.remove('hidden');
+        document.getElementById('viewCorrectionsBtn').textContent = 'Hide Review';
+      } else {
+        wrap.classList.add('hidden');
+        document.getElementById('viewCorrectionsBtn').textContent = 'Review My Answers';
+      }
+    });
   </script>
 </body>
 </html>

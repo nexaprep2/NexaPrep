@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
 // its own questions and activation codes.
 router.post('/', async (req, res) => {
   try {
-    const { name, code, description, durationMinutes } = req.body;
+    const { name, code, description, durationMinutes, price } = req.body;
     if (!name || !code) {
       return res.status(400).json({ error: 'Course name and code are required.' });
     }
@@ -37,11 +37,15 @@ router.post('/', async (req, res) => {
     if (Number.isNaN(duration) || duration < 1) duration = 30;
     if (duration > 300) duration = 300;
 
+    let coursePrice = parseFloat(price);
+    if (Number.isNaN(coursePrice) || coursePrice < 0) coursePrice = 0;
+
     const course = await Course.create({
       name: name.trim(),
       code: normalizedCode,
       description: (description || '').trim(),
-      durationMinutes: duration
+      durationMinutes: duration,
+      price: coursePrice
     });
 
     res.status(201).json({ message: 'Course created.', course });
@@ -51,10 +55,10 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/admin/courses/:courseId  { name?, description?, isActive? }
+// PATCH /api/admin/courses/:courseId  { name?, description?, isActive?, durationMinutes?, price? }
 router.patch('/:courseId', async (req, res) => {
   try {
-    const { name, description, isActive, durationMinutes } = req.body;
+    const { name, description, isActive, durationMinutes, price } = req.body;
     const course = await Course.findById(req.params.courseId);
     if (!course) return res.status(404).json({ error: 'Course not found.' });
 
@@ -65,6 +69,12 @@ router.patch('/:courseId', async (req, res) => {
       let duration = parseInt(durationMinutes, 10);
       if (!Number.isNaN(duration) && duration >= 1 && duration <= 300) {
         course.durationMinutes = duration;
+      }
+    }
+    if (price !== undefined) {
+      const coursePrice = parseFloat(price);
+      if (!Number.isNaN(coursePrice) && coursePrice >= 0) {
+        course.price = coursePrice;
       }
     }
 
