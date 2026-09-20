@@ -208,4 +208,53 @@ router.get('/payout-records', async (req, res) => {
   }
 });
 
+// GET /api/admin/revenue/transactions?start=ISO&end=ISO -> itemized transactions
+// for any admin-chosen date range (not limited to the Friday-Friday cycle).
+// This is what gives lasting transparency: since it queries ActivationCode
+// records directly (which are never deleted), the same range keeps returning
+// the same detailed list no matter how much time has passed since.
+router.get('/transactions', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    if (!start || !end) {
+      return res.status(400).json({ error: 'start and end query params are required (ISO dates).' });
+    }
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return res.status(400).json({ error: 'start/end must be valid dates.' });
+    }
+    if (startDate >= endDate) {
+      return res.status(400).json({ error: 'start must be before end.' });
+    }
+
+    // Make "end" inclusive of the whole day if only a date (no time) was given.
+    if (end.length <= 10) {
+      endDate.setHours(23, 59, 59, 999);
+    }
+
+    const [{ grossRevenue, sales, saleCount }, settings] = await Promise.all([
+      computeWeekRevenue(startDate, endDate),
+      getShareSettings()
+    ]);
+
+    const yourShare = Math.round((grossRevenue * settings.yourSharePercent) / 100 * 100) / 100;
+    const clientShare = Math.round((grossRevenue - yourShare) * 100) / 100;
+
+    res.json({
+      rangeStart: startDate,
+      rangeEnd: endDate,
+      grossRevenue,
+      saleCount,
+      yourSharePercent: settings.yourSharePercent,
+      yourShare,
+      clientShare,
+      sales
+    });
+  } catch (err) {
+    console.error('Get revenue transactions error:', err);
+    res.status(500).json({ error: 'Could not load transactions for that range.' });
+  }
+});
+
 module.exports = router;

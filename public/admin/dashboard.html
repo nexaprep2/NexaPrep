@@ -247,6 +247,35 @@
         <div id="currentWeekSalesWrap" style="margin-top:18px;"></div>
       </div>
 
+      <div class="section-title">Detailed Transactions (Custom Date Range)</div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="small-muted" style="margin-top:0;">
+          Pick any date range to see every activation sold in it — full transparency, not just the current week.
+          This data doesn't disappear once the week ends.
+        </p>
+        <div class="grid cols-2">
+          <div class="field">
+            <label for="rangeStartInput">From</label>
+            <input type="date" id="rangeStartInput">
+          </div>
+          <div class="field">
+            <label for="rangeEndInput">To</label>
+            <input type="date" id="rangeEndInput">
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary" id="viewRangeBtn">View Transactions</button>
+
+        <div id="rangeResultsWrap" class="hidden" style="margin-top:20px;">
+          <div class="grid cols-4">
+            <div class="stat-card"><div class="value" id="rangeGross">₦0</div><div class="label">Gross Revenue</div></div>
+            <div class="stat-card"><div class="value" id="rangeYourShare">₦0</div><div class="label">Your Share</div></div>
+            <div class="stat-card"><div class="value" id="rangeClientShare">₦0</div><div class="label">Client's Share</div></div>
+            <div class="stat-card"><div class="value" id="rangeSaleCount">0</div><div class="label">Activations Sold</div></div>
+          </div>
+          <div id="rangeTransactionsTableWrap" style="margin-top:18px;"></div>
+        </div>
+      </div>
+
       <div class="section-title">Weekly History</div>
       <div id="revenueHistoryWrap"></div>
     </div>
@@ -994,6 +1023,53 @@
         showAlert('alertBox', err.message);
       }
     }
+
+    // ---- Custom date-range transactions ----
+    document.getElementById('viewRangeBtn').addEventListener('click', async () => {
+      hideAlert('alertBox');
+      const startVal = document.getElementById('rangeStartInput').value;
+      const endVal = document.getElementById('rangeEndInput').value;
+      if (!startVal || !endVal) {
+        return showAlert('alertBox', 'Please choose both a start and an end date.');
+      }
+      if (startVal > endVal) {
+        return showAlert('alertBox', 'The start date must be before the end date.');
+      }
+
+      try {
+        const data = await adminApiRequest(`/admin/revenue/transactions?start=${startVal}&end=${endVal}`);
+
+        document.getElementById('rangeGross').textContent = formatNaira(data.grossRevenue);
+        document.getElementById('rangeYourShare').textContent = formatNaira(data.yourShare);
+        document.getElementById('rangeClientShare').textContent = formatNaira(data.clientShare);
+        document.getElementById('rangeSaleCount').textContent = data.saleCount;
+
+        const tableWrap = document.getElementById('rangeTransactionsTableWrap');
+        if (!data.sales.length) {
+          tableWrap.innerHTML = '<div class="empty-state">No activations sold in this date range.</div>';
+        } else {
+          tableWrap.innerHTML = `
+            <table>
+              <thead><tr><th>Timestamp</th><th>Course</th><th>Code</th><th>Amount</th></tr></thead>
+              <tbody>
+                ${data.sales.map(s => `
+                  <tr>
+                    <td>${new Date(s.usedAt).toLocaleString()}</td>
+                    <td>${s.courseName}</td>
+                    <td><span class="code-chip">${s.code}</span></td>
+                    <td>${formatNaira(s.amount)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+
+        document.getElementById('rangeResultsWrap').classList.remove('hidden');
+      } catch (err) {
+        showAlert('alertBox', err.message);
+      }
+    });
 
     // Initial load
     (async () => {
